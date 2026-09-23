@@ -168,7 +168,7 @@ export function subscribeTransactionsFromFirestore(
 }
 
 /**
- * Batch upload local transactions to Firestore if not already present
+ * Batch upload local transactions to Firestore
  */
 export async function batchSyncLocalTransactionsToFirestore(
   userId: string,
@@ -176,29 +176,28 @@ export async function batchSyncLocalTransactionsToFirestore(
 ): Promise<number> {
   if (!userId || localTransactions.length === 0) return 0;
   try {
-    const existing = await loadTransactionsFromFirestore(userId);
-    const existingIds = new Set(existing.map((t) => t.id));
-    const toUpload = localTransactions.filter((t) => !existingIds.has(t.id));
-
-    if (toUpload.length === 0) return 0;
-
-    // Use Firestore batches (up to 500 ops per batch)
+    // Commit up to 450 transactions in batch with merge
     const batch = writeBatch(db);
-    toUpload.forEach((tx) => {
+    const slice = localTransactions.slice(0, 450);
+    slice.forEach((tx) => {
       const txRef = doc(db, 'users', userId, 'transactions', tx.id);
-      batch.set(txRef, {
-        ...tx,
-        userId,
-        appName: APP_NAME,
-        updatedAt: Date.now(),
-      });
+      batch.set(
+        txRef,
+        {
+          ...tx,
+          userId,
+          appName: APP_NAME,
+          updatedAt: Date.now(),
+        },
+        { merge: true }
+      );
     });
 
     await batch.commit();
-    return toUpload.length;
+    return slice.length;
   } catch (err) {
     console.error('Failed to batch sync local transactions to Firestore:', err);
-    return 0;
+    throw err;
   }
 }
 
@@ -224,7 +223,7 @@ export async function saveBudgetToFirestore(userId: string, budget: BudgetConfig
  * Loads budget configuration from Firestore
  */
 export async function loadBudgetFromFirestore(userId: string): Promise<BudgetConfig | null> {
-  if (!userId) return null;
+  if (!userId || !auth.currentUser || auth.currentUser.uid !== userId) return null;
   try {
     const ref = doc(db, 'users', userId, 'settings', 'budget');
     const snap = await getDoc(ref);
@@ -232,8 +231,12 @@ export async function loadBudgetFromFirestore(userId: string): Promise<BudgetCon
       return snap.data() as BudgetConfig;
     }
     return null;
-  } catch (err) {
-    console.error('Failed to load budget from Firestore:', err);
+  } catch (err: any) {
+    if (err?.code === 'permission-denied') {
+      console.warn('Budget not accessible or user not yet authorized in Firestore rules');
+    } else {
+      console.warn('Failed to load budget from Firestore:', err);
+    }
     return null;
   }
 }
@@ -242,7 +245,7 @@ export async function loadBudgetFromFirestore(userId: string): Promise<BudgetCon
  * Saves Google Sheet configuration to Firestore
  */
 export async function saveSheetConfigToFirestore(userId: string, config: SheetConfig): Promise<void> {
-  if (!userId) return;
+  if (!userId || !auth.currentUser || auth.currentUser.uid !== userId) return;
   try {
     const ref = doc(db, 'users', userId, 'settings', 'sheet');
     await setDoc(ref, {
@@ -252,7 +255,7 @@ export async function saveSheetConfigToFirestore(userId: string, config: SheetCo
       updatedAt: Date.now(),
     });
   } catch (err) {
-    console.error('Failed to save sheet config to Firestore:', err);
+    console.warn('Failed to save sheet config to Firestore:', err);
   }
 }
 
@@ -260,7 +263,7 @@ export async function saveSheetConfigToFirestore(userId: string, config: SheetCo
  * Loads Google Sheet configuration from Firestore
  */
 export async function loadSheetConfigFromFirestore(userId: string): Promise<SheetConfig | null> {
-  if (!userId) return null;
+  if (!userId || !auth.currentUser || auth.currentUser.uid !== userId) return null;
   try {
     const ref = doc(db, 'users', userId, 'settings', 'sheet');
     const snap = await getDoc(ref);
@@ -268,8 +271,12 @@ export async function loadSheetConfigFromFirestore(userId: string): Promise<Shee
       return snap.data() as SheetConfig;
     }
     return null;
-  } catch (err) {
-    console.error('Failed to load sheet config from Firestore:', err);
+  } catch (err: any) {
+    if (err?.code === 'permission-denied') {
+      console.warn('Sheet config not accessible or user not yet authorized in Firestore rules');
+    } else {
+      console.warn('Failed to load sheet config from Firestore:', err);
+    }
     return null;
   }
 }

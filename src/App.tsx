@@ -65,6 +65,10 @@ import {
   Flame,
   CloudCheck,
   RefreshCw,
+  ExternalLink,
+  Copy,
+  Check,
+  ShieldAlert,
 } from 'lucide-react';
 
 export default function App() {
@@ -74,6 +78,8 @@ export default function App() {
   const [authToken, setAuthToken] = useState<string | null>(null);
   const [isFirebaseSyncing, setIsFirebaseSyncing] = useState(false);
   const [lastFirebaseSyncTime, setLastFirebaseSyncTime] = useState<string | null>(null);
+  const [unauthorizedDomainModal, setUnauthorizedDomainModal] = useState<string | null>(null);
+  const [hasCopiedDomain, setHasCopiedDomain] = useState(false);
 
   // App core states
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -240,6 +246,7 @@ export default function App() {
         return;
       }
       if (err?.code === 'auth/unauthorized-domain') {
+        setUnauthorizedDomainModal(window.location.hostname);
         showToast(`โดเมน ${window.location.hostname} ยังไม่ได้รับอนุญาตใน Firebase Console (Authorized Domains)`, 'error');
         return;
       }
@@ -867,6 +874,86 @@ export default function App() {
                 className="px-4 py-1.5 rounded-xl text-xs font-semibold text-white bg-red-600 hover:bg-red-700 transition-colors cursor-pointer"
               >
                 ยืนยันการลบ
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Unauthorized Domain Guide Modal */}
+      {unauthorizedDomainModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-stone-200 animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-start gap-3">
+              <div className="p-2.5 rounded-2xl bg-amber-50 border border-amber-200 text-amber-600 shrink-0">
+                <ShieldAlert className="w-6 h-6" />
+              </div>
+              <div className="flex-1">
+                <h3 className="font-bold text-stone-900 text-base">
+                  ต้องอนุญาตโดเมนใน Firebase Console ก่อนเข้าสู่ระบบ
+                </h3>
+                <p className="text-xs text-stone-500 mt-1">
+                  Firebase บล็อกการเข้าสู่ระบบจากโดเมนนี้เพื่อความปลอดภัย กรุณาเพิ่มโดเมนด้านล่างนี้ใน Firebase Console
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-4 p-3.5 bg-stone-50 rounded-2xl border border-stone-200">
+              <div className="text-[11px] font-medium text-stone-500 mb-1.5">ชื่อโดเมนที่ต้องนำไปใส่ (Authorized Domain):</div>
+              <div className="flex items-center justify-between gap-2 bg-white px-3 py-2 rounded-xl border border-stone-200 font-mono text-xs text-stone-800 break-all select-all">
+                <span>{unauthorizedDomainModal}</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(unauthorizedDomainModal);
+                    setHasCopiedDomain(true);
+                    setTimeout(() => setHasCopiedDomain(false), 2500);
+                  }}
+                  className="inline-flex items-center gap-1 text-xs font-semibold text-red-600 hover:text-red-700 bg-red-50 hover:bg-red-100 px-2.5 py-1 rounded-lg transition-colors shrink-0 cursor-pointer"
+                >
+                  {hasCopiedDomain ? (
+                    <>
+                      <Check className="w-3.5 h-3.5 text-emerald-600" />
+                      <span className="text-emerald-700">คัดลอกแล้ว!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3.5 h-3.5" />
+                      <span>คัดลอกโดเมน</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+
+            <div className="mt-4 space-y-2 text-xs text-stone-600">
+              <div className="font-semibold text-stone-800 text-xs">ขั้นตอนการแก้ไข (ทำเพียงครั้งเดียว):</div>
+              <ol className="list-decimal list-inside space-y-1 pl-1 text-[11px] text-stone-600">
+                <li>เปิดหน้า <strong>Firebase Console &gt; Authentication &gt; Settings</strong></li>
+                <li>เลื่อนลงไปที่หัวข้อ <strong>Authorized domains</strong></li>
+                <li>คลิกปุ่ม <strong>Add domain</strong></li>
+                <li>วางโดเมนที่คัดลอกไว้ แล้วคลิก <strong>Save</strong></li>
+                <li>กลับมาหน้านี้แล้วคลิก <strong>"เข้าสู่ระบบ Google"</strong> ได้ทันที</li>
+              </ol>
+            </div>
+
+            <div className="mt-6 flex flex-wrap items-center justify-between gap-2 pt-3 border-t border-stone-100">
+              <a
+                href="https://console.firebase.google.com/project/gen-lang-client-0232024256/authentication/settings"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold text-white bg-red-600 hover:bg-red-700 transition-colors shadow-xs"
+              >
+                <span>เปิด Firebase Console ตรงนี้</span>
+                <ExternalLink className="w-3.5 h-3.5" />
+              </a>
+
+              <button
+                type="button"
+                onClick={() => setUnauthorizedDomainModal(null)}
+                className="px-4 py-2 rounded-xl text-xs font-medium text-stone-600 hover:bg-stone-100 transition-colors cursor-pointer"
+              >
+                ปิดหน้าต่าง
               </button>
             </div>
           </div>
