@@ -1,0 +1,10 @@
+{
+  "name": "Personal Expense Tracker",
+  "description": "Minimalist red personal expense tracker with Google Sheets sync, cash and credit card separation, AI receipt scanning, and budget alerts",
+  "requestFramePermissions": [
+    "camera"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
