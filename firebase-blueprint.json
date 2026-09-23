@@ -1,0 +1,144 @@
+{
+  "entities": {
+    "Transaction": {
+      "title": "Transaction",
+      "description": "Represents an income or expense transaction in the Personal Expense Tracker",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique transaction ID"
+        },
+        "userId": {
+          "type": "string",
+          "description": "Firebase Auth UID of the user who owns this record"
+        },
+        "date": {
+          "type": "string",
+          "description": "Transaction date in YYYY-MM-DD format"
+        },
+        "time": {
+          "type": "string",
+          "description": "Transaction time in HH:mm format"
+        },
+        "type": {
+          "type": "string",
+          "enum": ["income", "expense"],
+          "description": "Type of transaction"
+        },
+        "category": {
+          "type": "string",
+          "description": "Category such as Food, Shopping, Transport, etc."
+        },
+        "description": {
+          "type": "string",
+          "description": "Description of the purchase or income"
+        },
+        "amount": {
+          "type": "number",
+          "description": "Amount in THB"
+        },
+        "paymentMethod": {
+          "type": "string",
+          "enum": ["cash", "credit_card", "transfer"],
+          "description": "Method of payment"
+        },
+        "merchant": {
+          "type": "string",
+          "description": "Store or merchant name"
+        },
+        "notes": {
+          "type": "string",
+          "description": "Additional notes"
+        },
+        "syncedToSheet": {
+          "type": "boolean",
+          "description": "Whether synced to Google Sheets"
+        },
+        "createdAt": {
+          "type": "number",
+          "description": "Timestamp in milliseconds"
+        }
+      },
+      "required": ["id", "userId", "date", "type", "category", "description", "amount", "paymentMethod", "createdAt"]
+    },
+    "BudgetConfig": {
+      "title": "BudgetConfig",
+      "description": "Monthly budget and notification thresholds",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Owner user ID"
+        },
+        "monthlyBudget": {
+          "type": "number",
+          "description": "Monthly spending budget limit in THB"
+        },
+        "warningThresholdPercent": {
+          "type": "number",
+          "description": "Percentage at which warning is shown (e.g. 80)"
+        },
+        "alertThresholdPercent": {
+          "type": "number",
+          "description": "Percentage at which alert is triggered (e.g. 100)"
+        },
+        "enableChatAlert": {
+          "type": "boolean",
+          "description": "Whether to trigger alerts in chat"
+        },
+        "updatedAt": {
+          "type": "number",
+          "description": "Last updated timestamp"
+        }
+      },
+      "required": ["userId", "monthlyBudget", "warningThresholdPercent", "alertThresholdPercent", "enableChatAlert"]
+    },
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "User profile metadata",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "User unique ID"
+        },
+        "displayName": {
+          "type": "string",
+          "description": "Display name"
+        },
+        "email": {
+          "type": "string",
+          "description": "Email address"
+        },
+        "photoURL": {
+          "type": "string",
+          "description": "Avatar URL"
+        },
+        "appName": {
+          "type": "string",
+          "description": "Personal Expense Tracker Allin"
+        },
+        "updatedAt": {
+          "type": "number",
+          "description": "Last update timestamp"
+        }
+      },
+      "required": ["uid", "email"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "User profile information"
+    },
+    "/users/{userId}/transactions/{transactionId}": {
+      "schema": { "$ref": "#/entities/Transaction" },
+      "description": "User's personal income and expense transactions"
+    },
+    "/users/{userId}/settings/budget": {
+      "schema": { "$ref": "#/entities/BudgetConfig" },
+      "description": "User's monthly budget settings"
+    }
+  }
+}

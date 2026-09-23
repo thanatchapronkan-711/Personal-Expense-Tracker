@@ -1,0 +1,44 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128;
+    }
+
+    // User profile document
+    match /users/{userId} {
+      allow read, write: if isOwner(userId) && isValidId(userId);
+
+      // User transactions subcollection
+      match /transactions/{transactionId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) 
+          && isValidId(transactionId)
+          && request.resource.data.userId == userId
+          && request.resource.data.amount is number
+          && request.resource.data.amount >= 0
+          && request.resource.data.description is string
+          && request.resource.data.type in ['income', 'expense'];
+        allow update: if isOwner(userId)
+          && request.resource.data.userId == userId
+          && request.resource.data.amount is number
+          && request.resource.data.amount >= 0;
+        allow delete: if isOwner(userId);
+      }
+
+      // User settings (budget, sheet configs)
+      match /settings/{settingId} {
+        allow read, write: if isOwner(userId) && isValidId(settingId);
+      }
+    }
+  }
+}

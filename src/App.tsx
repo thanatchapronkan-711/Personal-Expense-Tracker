@@ -44,12 +44,27 @@ import {
   PaymentMethod,
 } from './types';
 import {
+  saveTransactionToFirestore,
+  deleteTransactionFromFirestore,
+  subscribeTransactionsFromFirestore,
+  batchSyncLocalTransactionsToFirestore,
+  saveBudgetToFirestore,
+  loadBudgetFromFirestore,
+  saveSheetConfigToFirestore,
+  loadSheetConfigFromFirestore,
+  syncUserProfileToFirestore,
+  APP_NAME,
+} from './services/firestore';
+import {
   Plus,
   Camera,
   MessageCircle,
   FileSpreadsheet,
   Sparkles,
   AlertTriangle,
+  Flame,
+  CloudCheck,
+  RefreshCw,
 } from 'lucide-react';
 
 export default function App() {
@@ -57,6 +72,8 @@ export default function App() {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [authToken, setAuthToken] = useState<string | null>(null);
+  const [isFirebaseSyncing, setIsFirebaseSyncing] = useState(false);
+  const [lastFirebaseSyncTime, setLastFirebaseSyncTime] = useState<string | null>(null);
 
   // App core states
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -92,19 +109,92 @@ export default function App() {
 
   // Initialize data and Firebase Auth
   useEffect(() => {
-    setTransactions(loadTransactions());
+    const local = loadTransactions();
+    setTransactions(local);
 
     // Listen to Firebase auth changes
-    const unsubscribe = initFirebaseAuthListener((currentUser) => {
+    const unsubscribe = initFirebaseAuthListener(async (currentUser) => {
       setUser(currentUser);
       const token = getGoogleAccessToken();
       setAuthToken(token);
+
+      if (currentUser) {
+        setIsFirebaseSyncing(true);
+        try {
+          // Sync user profile to Firestore
+          await syncUserProfileToFirestore(currentUser);
+
+          // Upload any existing local transactions to Firestore under Personal Expense Tracker Allin
+          const initialLocal = loadTransactions();
+          if (initialLocal.length > 0) {
+            await batchSyncLocalTransactionsToFirestore(currentUser.uid, initialLocal);
+          }
+
+          // Fetch cloud budget settings
+          const cloudBudget = await loadBudgetFromFirestore(currentUser.uid);
+          if (cloudBudget) {
+            setBudget(cloudBudget);
+          }
+
+          // Fetch cloud sheet settings
+          const cloudSheet = await loadSheetConfigFromFirestore(currentUser.uid);
+          if (cloudSheet) {
+            setSheetConfig(cloudSheet);
+          }
+
+          setLastFirebaseSyncTime(new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }));
+        } catch (e) {
+          console.warn('Initial Firestore sync error:', e);
+        } finally {
+          setIsFirebaseSyncing(false);
+        }
+      }
     });
 
     return () => {
       if (unsubscribe) unsubscribe();
     };
   }, []);
+
+  // Real-time Firestore synchronization for transactions when user is signed in
+  useEffect(() => {
+    if (!user?.uid) return;
+    const unsubscribeSnapshot = subscribeTransactionsFromFirestore(user.uid, (firestoreTxs) => {
+      if (firestoreTxs && firestoreTxs.length > 0) {
+        setTransactions(firestoreTxs);
+        setLastFirebaseSyncTime(new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }));
+      }
+    });
+
+    return () => {
+      unsubscribeSnapshot();
+    };
+  }, [user?.uid]);
+
+  // Manual Firebase Sync handler
+  const handleManualFirebaseSync = async () => {
+    if (!user?.uid) {
+      showToast('กรุณาเข้าสู่ระบบ Google เพื่อบันทึกข้อมูลไปยัง Firebase', 'info');
+      handleLogin();
+      return;
+    }
+    setIsFirebaseSyncing(true);
+    try {
+      await syncUserProfileToFirestore(user);
+      const count = await batchSyncLocalTransactionsToFirestore(user.uid, transactions);
+      await saveBudgetToFirestore(user.uid, budget);
+      if (sheetConfig.spreadsheetId) {
+        await saveSheetConfigToFirestore(user.uid, sheetConfig);
+      }
+      setLastFirebaseSyncTime(new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }));
+      showToast(`🔥 ซิงก์ข้อมูลไปที่ Firebase (${APP_NAME}) เรียบร้อยแล้ว!`);
+    } catch (err: any) {
+      console.error('Manual Firebase sync error:', err);
+      showToast('เกิดข้อผิดพลาดในการซิงก์ไปที่ Firebase', 'error');
+    } finally {
+      setIsFirebaseSyncing(false);
+    }
+  };
 
   // Sync state changes to storage
   useEffect(() => {
@@ -147,6 +237,10 @@ export default function App() {
       }
       if (err?.code === 'auth/popup-blocked') {
         showToast('เบราว์เซอร์บล็อกป๊อปอัป กรุณาอนุญาตป๊อปอัปเพื่อเข้าสู่ระบบ', 'error');
+        return;
+      }
+      if (err?.code === 'auth/unauthorized-domain') {
+        showToast(`โดเมน ${window.location.hostname} ยังไม่ได้รับอนุญาตใน Firebase Console (Authorized Domains)`, 'error');
         return;
       }
       console.error('Login error:', err);
@@ -213,6 +307,13 @@ export default function App() {
     const updated = [finalTx, ...transactions];
     setTransactions(updated);
     setTxDraft(null);
+
+    // Save directly to Firebase Firestore (Personal Expense Tracker Allin)
+    if (user?.uid) {
+      saveTransactionToFirestore(user.uid, finalTx).catch((err) => {
+        console.warn('Firebase Firestore save error:', err);
+      });
+    }
 
     // Budget check & LINE OA alert
     checkBudgetAndAlert(updated);
@@ -291,6 +392,10 @@ export default function App() {
         console.warn('Initial sync to new sheet failed:', e);
       }
     }
+
+    if (user?.uid) {
+      saveSheetConfigToFirestore(user.uid, newConfig).catch((e) => console.warn('Save sheet to Firestore failed:', e));
+    }
     showToast(`สร้าง Google Sheet ใหม่ "${title}" สำเร็จแล้ว!`);
   };
 
@@ -315,6 +420,9 @@ export default function App() {
     };
 
     setSheetConfig(updated);
+    if (user?.uid) {
+      saveSheetConfigToFirestore(user.uid, updated).catch((e) => console.warn('Save sheet to Firestore failed:', e));
+    }
     showToast('เชื่อมต่อ Google Sheet สำเร็จแล้ว');
   };
 
@@ -374,7 +482,13 @@ export default function App() {
 
   const confirmDelete = () => {
     if (!deletingId) return;
-    setTransactions((prev) => prev.filter((t) => t.id !== deletingId));
+    const idToDelete = deletingId;
+    setTransactions((prev) => prev.filter((t) => t.id !== idToDelete));
+    if (user?.uid) {
+      deleteTransactionFromFirestore(user.uid, idToDelete).catch((err) => {
+        console.warn('Firebase Firestore delete error:', err);
+      });
+    }
     setDeletingId(null);
     showToast('ลบรายการเรียบร้อยแล้ว');
   };
@@ -541,14 +655,14 @@ export default function App() {
           <div>
             <div className="flex items-center gap-2">
               <h2 className="font-bold text-base sm:text-lg">
-                ระบบจัดการรายรับ-รายจ่ายส่วนตัว
+                Personal Expense Tracker Allin
               </h2>
               <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-white/20 text-white backdrop-blur-xs">
-                Minimal Red
+                Firebase Firestore
               </span>
             </div>
             <p className="text-xs text-red-100 mt-0.5">
-              แยกเงินสดและบัตรเครดิต • บันทึกอัตโนมัติด้วย AI ใบเสร็จ • ซิงก์ Google Sheets • เตือนงบเกินใน LINE
+              แยกเงินสดและบัตรเครดิต • บันทึกอัตโนมัติด้วย AI ใบเสร็จ • ซิงก์ Google Sheets • เก็บข้อมูลบน Firebase
             </p>
           </div>
 
@@ -571,6 +685,48 @@ export default function App() {
             >
               <Plus className="w-4 h-4" />
               <span>เพิ่มรายการ</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Firebase Cloud Sync Status Card */}
+        <div className="bg-white rounded-2xl p-3.5 border border-stone-200/80 shadow-xs flex flex-wrap items-center justify-between gap-3 text-xs">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-orange-50 border border-orange-200 flex items-center justify-center text-orange-600 shrink-0">
+              <Flame className="w-4 h-4 fill-orange-500" />
+            </div>
+            <div>
+              <div className="flex items-center gap-1.5 font-semibold text-stone-800">
+                <span>Firebase Cloud Database:</span>
+                <span className="text-red-600 font-bold">{APP_NAME}</span>
+                {user ? (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                    ซิงก์คลาวด์เรียลไทม์
+                  </span>
+                ) : (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-amber-50 text-amber-700 border border-amber-200">
+                    โหมดเครื่อง (เข้าสู่ระบบเพื่อเชื่อม Firebase)
+                  </span>
+                )}
+              </div>
+              <p className="text-stone-500 text-[11px] mt-0.5">
+                {user
+                  ? `บัญชีผู้ใช้: ${user.email || user.displayName} • ข้อมูลบันทึกและซิงก์เรียลไทม์บน Firebase Firestore ${lastFirebaseSyncTime ? `(อัปเดตล่าสุด: ${lastFirebaseSyncTime})` : ''}`
+                  : 'ข้อมูลบันทึกลงเครื่องและจะถูกซิงก์ขึ้น Firebase Firestore ทันทีเมื่อเข้าสู่ระบบ'}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleManualFirebaseSync}
+              disabled={isFirebaseSyncing}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-700 font-medium transition-colors cursor-pointer disabled:opacity-50"
+              title="ซิงก์ข้อมูลไปยัง Firebase ทันที"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 text-stone-500 ${isFirebaseSyncing ? 'animate-spin' : ''}`} />
+              <span>{isFirebaseSyncing ? 'กำลังซิงก์...' : 'ซิงก์ขึ้น Firebase'}</span>
             </button>
           </div>
         </div>
@@ -663,6 +819,9 @@ export default function App() {
         budget={budget}
         onSave={(newCfg) => {
           setBudget(newCfg);
+          if (user?.uid) {
+            saveBudgetToFirestore(user.uid, newCfg).catch((e) => console.warn('Firestore budget save error:', e));
+          }
           showToast('บันทึกการตั้งค่างบประมาณและการแจ้งเตือนเรียบร้อยแล้ว');
         }}
         onTriggerTestAlert={handleTriggerTestAlert}

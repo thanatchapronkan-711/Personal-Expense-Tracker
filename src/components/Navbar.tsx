@@ -40,14 +40,15 @@ export const Navbar: React.FC<NavbarProps> = ({
             <div>
               <div className="flex items-center gap-2">
                 <span className="font-semibold text-stone-900 tracking-tight text-base sm:text-lg">
-                  รายรับรายจ่ายส่วนตัว
+                  Personal Expense Tracker Allin
                 </span>
-                <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-red-50 text-red-700 border border-red-200">
-                  Minimal Red
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-red-50 text-red-700 border border-red-200 flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-red-600 animate-pulse" />
+                  Firebase
                 </span>
               </div>
               <p className="text-xs text-stone-500 hidden sm:block">
-                Google Sheets Sync • AI Receipt Scanner • LINE OA Alert
+                Firebase Firestore • Google Sheets Sync • AI Receipt Scanner
               </p>
             </div>
           </div>
