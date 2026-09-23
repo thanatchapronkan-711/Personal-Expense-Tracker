@@ -12,6 +12,7 @@ import { ReceiptScannerModal } from './components/ReceiptScannerModal';
 import { LineChatSimulator } from './components/LineChatSimulator';
 import { BudgetModal } from './components/BudgetModal';
 import { GoogleSheetModal } from './components/GoogleSheetModal';
+import { LoginScreen } from './components/LoginScreen';
 import {
   signInWithGoogle,
   signOutUser,
@@ -46,6 +47,7 @@ import {
 import {
   saveTransactionToFirestore,
   deleteTransactionFromFirestore,
+  loadTransactionsFromFirestore,
   subscribeTransactionsFromFirestore,
   batchSyncLocalTransactionsToFirestore,
   saveBudgetToFirestore,
@@ -69,11 +71,13 @@ import {
   Copy,
   Check,
   ShieldAlert,
+  Wallet,
 } from 'lucide-react';
 
 export default function App() {
   // Authentication state
   const [user, setUser] = useState<UserProfile | null>(null);
+  const [authInitialized, setAuthInitialized] = useState(false);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [authToken, setAuthToken] = useState<string | null>(null);
   const [isFirebaseSyncing, setIsFirebaseSyncing] = useState(false);
@@ -121,6 +125,7 @@ export default function App() {
     // Listen to Firebase auth changes
     const unsubscribe = initFirebaseAuthListener(async (currentUser) => {
       setUser(currentUser);
+      setAuthInitialized(true);
       const token = getGoogleAccessToken();
       setAuthToken(token);
 
@@ -130,10 +135,18 @@ export default function App() {
           // Sync user profile to Firestore
           await syncUserProfileToFirestore(currentUser);
 
-          // Upload any existing local transactions to Firestore under Personal Expense Tracker Allin
-          const initialLocal = loadTransactions();
-          if (initialLocal.length > 0) {
-            await batchSyncLocalTransactionsToFirestore(currentUser.uid, initialLocal);
+          // Fetch fresh transactions directly from Firestore
+          const cloudTransactions = await loadTransactionsFromFirestore(currentUser.uid);
+          if (cloudTransactions && cloudTransactions.length > 0) {
+            setTransactions(cloudTransactions);
+          } else {
+            // First time user: upload initial local/starter data so they have starting items
+            const initialLocal = loadTransactions();
+            if (initialLocal.length > 0) {
+              await batchSyncLocalTransactionsToFirestore(currentUser.uid, initialLocal);
+              const refreshed = await loadTransactionsFromFirestore(currentUser.uid);
+              if (refreshed.length > 0) setTransactions(refreshed);
+            }
           }
 
           // Fetch cloud budget settings
@@ -262,6 +275,7 @@ export default function App() {
       await signOutUser();
       setUser(null);
       setAuthToken(null);
+      setTransactions([]);
       showToast('ออกจากระบบเรียบร้อยแล้ว', 'info');
     } catch (err: any) {
       console.error('Logout error:', err);
@@ -620,6 +634,126 @@ export default function App() {
 
   const pendingSyncCount = transactions.filter((t) => !t.syncedToSheet).length;
 
+  // 1. Loading screen while Firebase Auth checks initial state
+  if (!authInitialized) {
+    return (
+      <div className="min-h-screen bg-stone-900 flex flex-col items-center justify-center p-4 text-white">
+        <div className="w-12 h-12 rounded-2xl bg-red-600 flex items-center justify-center mb-4 animate-bounce shadow-xl shadow-red-600/30">
+          <Wallet className="w-6 h-6 text-white" />
+        </div>
+        <div className="w-6 h-6 border-2 border-red-500 border-t-transparent rounded-full animate-spin mb-3" />
+        <p className="text-xs text-stone-400 font-medium">กำลังเชื่อมต่อ Firebase Cloud...</p>
+      </div>
+    );
+  }
+
+  // 2. Authentication Gate: If not logged in, force user to log in first
+  if (!user) {
+    return (
+      <>
+        {/* Toast Notification Banner on Login */}
+        {toast && (
+          <div className="fixed top-6 right-4 z-50 animate-in fade-in slide-in-from-top-4 duration-300">
+            <div
+              className={`px-4 py-3 rounded-2xl shadow-lg border text-xs sm:text-sm font-semibold flex items-center gap-2 ${
+                toast.type === 'error'
+                  ? 'bg-red-600 text-white border-red-700'
+                  : toast.type === 'info'
+                  ? 'bg-stone-800 text-white border-stone-900'
+                  : 'bg-emerald-600 text-white border-emerald-700'
+              }`}
+            >
+              <span>{toast.message}</span>
+            </div>
+          </div>
+        )}
+
+        <LoginScreen onLogin={handleLogin} isLoggingIn={isLoggingIn} />
+
+        {/* Unauthorized Domain Guide Modal if user hits domain restriction */}
+        {unauthorizedDomainModal && (
+          <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4">
+            <div className="bg-white text-stone-900 rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-stone-200 animate-in fade-in zoom-in-95 duration-200">
+              <div className="flex items-start gap-3">
+                <div className="p-2.5 rounded-2xl bg-amber-50 border border-amber-200 text-amber-600 shrink-0">
+                  <ShieldAlert className="w-6 h-6" />
+                </div>
+                <div className="flex-1">
+                  <h3 className="font-bold text-stone-900 text-base">
+                    ต้องอนุญาตโดเมนใน Firebase Console ก่อนเข้าสู่ระบบ
+                  </h3>
+                  <p className="text-xs text-stone-500 mt-1">
+                    Firebase บล็อกการเข้าสู่ระบบจากโดเมนนี้เพื่อความปลอดภัย กรุณาเพิ่มโดเมนด้านล่างนี้ใน Firebase Console
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-4 p-3.5 bg-stone-50 rounded-2xl border border-stone-200">
+                <div className="text-[11px] font-medium text-stone-500 mb-1.5">ชื่อโดเมนที่ต้องนำไปใส่ (Authorized Domain):</div>
+                <div className="flex items-center justify-between gap-2 bg-white px-3 py-2 rounded-xl border border-stone-200 font-mono text-xs text-stone-800 break-all select-all">
+                  <span>{unauthorizedDomainModal}</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(unauthorizedDomainModal);
+                      setHasCopiedDomain(true);
+                      setTimeout(() => setHasCopiedDomain(false), 2500);
+                    }}
+                    className="inline-flex items-center gap-1 text-xs font-semibold text-red-600 hover:text-red-700 bg-red-50 hover:bg-red-100 px-2.5 py-1 rounded-lg transition-colors shrink-0 cursor-pointer"
+                  >
+                    {hasCopiedDomain ? (
+                      <>
+                        <Check className="w-3.5 h-3.5 text-emerald-600" />
+                        <span className="text-emerald-700">คัดลอกแล้ว!</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3.5 h-3.5" />
+                        <span>คัดลอกโดเมน</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              <div className="mt-4 space-y-2 text-xs text-stone-600">
+                <div className="font-semibold text-stone-800 text-xs">ขั้นตอนการแก้ไข (ทำเพียงครั้งเดียว):</div>
+                <ol className="list-decimal list-inside space-y-1 pl-1 text-[11px] text-stone-600">
+                  <li>เปิดหน้า <strong>Firebase Console &gt; Authentication &gt; Settings</strong></li>
+                  <li>เลื่อนลงไปที่หัวข้อ <strong>Authorized domains</strong></li>
+                  <li>คลิกปุ่ม <strong>Add domain</strong></li>
+                  <li>วางโดเมนที่คัดลอกไว้ แล้วคลิก <strong>Save</strong></li>
+                  <li>กลับมาหน้านี้แล้วคลิก <strong>"เข้าสู่ระบบด้วย Google"</strong> อีกครั้ง</li>
+                </ol>
+              </div>
+
+              <div className="mt-6 flex flex-wrap items-center justify-between gap-2 pt-3 border-t border-stone-100">
+                <a
+                  href="https://console.firebase.google.com/project/gen-lang-client-0232024256/authentication/settings"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold text-white bg-red-600 hover:bg-red-700 transition-colors shadow-xs"
+                >
+                  <span>เปิด Firebase Console ตรงนี้</span>
+                  <ExternalLink className="w-3.5 h-3.5" />
+                </a>
+
+                <button
+                  type="button"
+                  onClick={() => setUnauthorizedDomainModal(null)}
+                  className="px-4 py-2 rounded-xl text-xs font-medium text-stone-600 hover:bg-stone-100 transition-colors cursor-pointer"
+                >
+                  ปิดหน้าต่าง
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </>
+    );
+  }
+
+  // 3. Authenticated User Experience (Dashboard & Storage in Firebase)
   return (
     <div className="min-h-screen bg-stone-50 text-stone-900 flex flex-col font-sans selection:bg-red-500 selection:text-white">
       
