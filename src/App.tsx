@@ -402,7 +402,19 @@ export default function App() {
       let replyText = '';
       let isAlert = false;
 
-      if (text.includes('สรุป') || text.includes('รายงาน')) {
+      if (text.includes('ปี') || text.includes('ทั้งปี') || text.includes('รายปี')) {
+        const curYear = selectedMonth.slice(0, 4);
+        const yrTxs = transactions.filter((t) => t.date.startsWith(curYear));
+        const yrExp = yrTxs.filter((t) => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
+        const yrCash = yrTxs.filter((t) => t.type === 'expense' && t.paymentMethod === 'cash').reduce((s, t) => s + t.amount, 0);
+        const yrCC = yrTxs.filter((t) => t.type === 'expense' && t.paymentMethod === 'credit_card').reduce((s, t) => s + t.amount, 0);
+        const yrTransfer = yrTxs.filter((t) => t.type === 'expense' && (t.paymentMethod === 'transfer' || t.paymentMethod === 'bank_transfer' || t.paymentMethod === 'promptpay')).reduce((s, t) => s + t.amount, 0);
+        const yrInc = yrTxs.filter((t) => t.type === 'income').reduce((s, t) => s + t.amount, 0);
+        const yrAvg = yrExp / 12;
+        const thaiY = parseInt(curYear, 10) + 543;
+
+        replyText = `📅 สรุปยอดรายจ่ายประจำปี ${thaiY} (${curYear}):\n• รายจ่ายรวมทั้งปี: ฿${yrExp.toLocaleString('th-TH', { minimumFractionDigits: 2 })}\n• เฉลี่ยเดือนละ: ฿${yrAvg.toLocaleString('th-TH', { maximumFractionDigits: 0 })}\n• 💵 เงินสด: ฿${yrCash.toLocaleString('th-TH')} (${yrExp > 0 ? ((yrCash / yrExp) * 100).toFixed(0) : 0}%)\n• 💳 บัตรเครดิต: ฿${yrCC.toLocaleString('th-TH')} (${yrExp > 0 ? ((yrCC / yrExp) * 100).toFixed(0) : 0}%)\n• 📲 โอนเงิน / พร้อมเพย์: ฿${yrTransfer.toLocaleString('th-TH')} (${yrExp > 0 ? ((yrTransfer / yrExp) * 100).toFixed(0) : 0}%)\n• รายรับรวมทั้งปี: ฿${yrInc.toLocaleString('th-TH')}\n• ยอดออมสุทธิทั้งปี: ฿${(yrInc - yrExp).toLocaleString('th-TH')}`;
+      } else if (text.includes('สรุป') || text.includes('รายงาน')) {
         replyText = `📊 สรุปยอดค่าใช้จ่ายเดือนนี้:\n• รายจ่ายรวม: ฿${totalExp.toLocaleString('th-TH', { minimumFractionDigits: 2 })}\n• 💵 เงินสด: ฿${cashExp.toLocaleString('th-TH')}\n• 💳 บัตรเครดิต: ฿${ccExp.toLocaleString('th-TH')}\n• 📲 โอนเงิน / พร้อมเพย์: ฿${transferExp.toLocaleString('th-TH')}\n• งบประมาณคงเหลือ: ฿${Math.max(0, budget.monthlyBudget - totalExp).toLocaleString('th-TH')}`;
       } else if (text.includes('งบ') || text.includes('budget')) {
         const percent = budget.monthlyBudget > 0 ? (totalExp / budget.monthlyBudget) * 100 : 0;

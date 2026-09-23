@@ -301,6 +301,13 @@ export const LineChatSimulator: React.FC<LineChatSimulatorProps> = ({
           </button>
 
           <button
+            onClick={() => handleQuickCommand('สรุปรายปี')}
+            className="px-3 py-1.5 rounded-full bg-stone-700 hover:bg-stone-600 text-stone-200 text-xs whitespace-nowrap cursor-pointer"
+          >
+            📅 สรุปรายปี
+          </button>
+
+          <button
             onClick={() => handleQuickCommand('เช็คสถานะงบประมาณ')}
             className="px-3 py-1.5 rounded-full bg-stone-700 hover:bg-stone-600 text-stone-200 text-xs whitespace-nowrap cursor-pointer"
           >
