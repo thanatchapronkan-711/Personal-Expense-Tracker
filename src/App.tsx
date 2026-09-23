@@ -128,11 +128,27 @@ export default function App() {
     try {
       setIsLoggingIn(true);
       const profile = await signInWithGoogle();
+      if (!profile) {
+        // User dismissed the popup or cancelled sign-in
+        return;
+      }
       setUser(profile);
       const token = getGoogleAccessToken();
       setAuthToken(token);
       showToast(`เข้าสู่ระบบสำเร็จ: ${profile.displayName || profile.email}`);
     } catch (err: any) {
+      if (
+        err?.code === 'auth/popup-closed-by-user' ||
+        err?.code === 'auth/cancelled-popup-request' ||
+        err?.code === 'auth/user-cancelled'
+      ) {
+        // User intentionally cancelled or closed the popup
+        return;
+      }
+      if (err?.code === 'auth/popup-blocked') {
+        showToast('เบราว์เซอร์บล็อกป๊อปอัป กรุณาอนุญาตป๊อปอัปเพื่อเข้าสู่ระบบ', 'error');
+        return;
+      }
       console.error('Login error:', err);
       showToast(err?.message || 'ไม่สามารถเข้าสู่ระบบด้วย Google ได้', 'error');
     } finally {

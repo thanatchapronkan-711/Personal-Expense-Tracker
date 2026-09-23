@@ -65,6 +65,15 @@ export const googleSignIn = async (): Promise<{ user: User; accessToken: string;
 
     return { user: result.user, accessToken: cachedAccessToken, profile };
   } catch (error: any) {
+    // Gracefully handle user cancellation or closing the popup
+    if (
+      error?.code === 'auth/popup-closed-by-user' ||
+      error?.code === 'auth/cancelled-popup-request' ||
+      error?.code === 'auth/user-cancelled'
+    ) {
+      // User closed the popup window, this is normal user interaction
+      return null;
+    }
     console.error('Sign-in error:', error);
     throw error;
   } finally {
@@ -86,9 +95,9 @@ export const logout = async () => {
 };
 
 export const signOutUser = logout;
-export const signInWithGoogle = async (): Promise<UserProfile> => {
+export const signInWithGoogle = async (): Promise<UserProfile | null> => {
   const result = await googleSignIn();
-  if (!result) throw new Error('Sign in failed');
+  if (!result) return null;
   return result.profile;
 };
 
